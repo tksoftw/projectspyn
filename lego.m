@@ -12,40 +12,100 @@
 
 stop(brick);
 brick.GyroCalibrate(4);
+pause(1);   
 brick.SetColorMode(3, 2);
 %turnLeft(brick);
-%turnRight(brick, -1);
+%turnRight(brick);
 %turnLeft(brick);
 
-global lastColor;
+
 global key;
 global clawOpen;
 global passengerPickedUp;
+global passengerDroppedOff;
+global running;
+global greenTimerStart;
+global greenTimerEnd;
 
+greenTimerStart = 0;
+greenTimerEnd = 0;
+passengerDroppedOff = false;
 passengerPickedUp = false;
 clawOpen = false;
-lastColor = brick.ColorCode(3);
+
 
 %turnRight(brick);
-%turnLeft(brick);
+%turnUntilAngle(brick, 175);
 %pickUpPassenger(brick);
 %turnLeft(brick);
 
 
-while 0
+%moveBackward(brick);
+%pause(1);
+
+%toggleClaw(brick);
+%passengerPickedUp = ~passengerPickedUp;
+
+%turnUntilAngle(brick, 175);
+
+nonBlockingMoveForward(brick, 2);
+
+running = 0;
+while running
     moveForward(brick);
-    keepClawClosed(brick);
+    if ~clawOpen
+        keepClawClosed(brick);
+    end
     if (~frontClear(brick))
         backupAndTurn(brick);
     elseif (~onWall(brick))
         moveAroundWall(brick);
     else
-        reactToColor(brick);
+        reactToColor(brick); 
     end
 end
 
 
+function dropOffPassenger(brick)
+    disp("Dropping off");
+    global clawOpen;
+    global key;
+    global passengerPickedUp;
+    global passengerDroppedOff;
+
+    passengerPickedUp = false;
+
+    stop(brick);
+    
+    brick.GyroCalibrate(4);
+
+    turnUntilAngle(brick, 175);    
+    
+    InitKeyboard();
+    disp("Pausing to initialize keyboard");
+    pause(2);
+
+    while ~clawOpen
+        moveBackward(brick);
+        pause(0.1);
+        switch key
+            case 'space'
+                stop(brick);
+                toggleClaw(brick);
+            otherwise
+               
+        end
+    end
+    passengerDroppedOff = true;
+    stop(brick);
+
+    CloseKeyboard();
+    disp("Pausing to close keyboard");
+end
+
+
 function pickUpPassenger(brick)
+    disp("Picking Up")
     global clawOpen;
     global key;
     global passengerPickedUp;
@@ -54,6 +114,7 @@ function pickUpPassenger(brick)
     stop(brick);
     
     brick.GyroCalibrate(4);
+    pause(1);
 
     turnUntilAngle(brick, 175);
     if ~clawOpen
@@ -101,12 +162,12 @@ end
 
 function toggleClaw(brick)
     global clawOpen;
-    disp(clawOpen)
+    %disp(clawOpen)
     clawOpen = ~clawOpen;
-    disp(clawOpen)
-    speed = 30;
+    %disp(clawOpen)
+    speed = 10;
     brick.MoveMotor('A', speed*(-1)^clawOpen);
-    pause(0.25);
+    pause(0.75);
     stop(brick);
     brick.MoveMotor('A', speed*(-1)^clawOpen);
 end
@@ -134,7 +195,9 @@ function nonBlockingMoveForward(brick, duration)
     moveForward(brick);
     while toc < duration
         reactToColor(brick);
-        keepClawClosed(brick);
+        if ~clawOpen
+            keepClawClosed(brick);
+        end
         %reactToColor(brick, color);
         %pause(0.05);  % Short pause to avoid overloading the CPU
     end
@@ -178,30 +241,44 @@ function turnUntilAngle(brick, targetAngle)
 end
 
 function reactToColor(brick)
-    global lastColor;
     global passengerPickedUp;
+    global passengerDroppedOff;
+    global running;
+    global greenTimerStart;
+    global greenTimerEnd;
+
     color = brick.ColorCode(3);
-    if (color ~= lastColor)
-        switch color
-            case 5 % Red
-                % Perform action for red color
+    %disp(color)
+    if greenTimerStart ~= 0 && color ~= 3
+        greenTimerStart = 0;
+        greenTimerEnd = 0;
+    end
+    switch color
+        case 5 % Red 
+            % Perform action for red color
+            stop(brick);
+            pause(1);
+            moveForward(brick);
+        case 2 % Blue
+            if ~passengerPickedUp
+                pickUpPassenger(brick);
+            end
+        case 3 % Green
+            if greenTimerStart == 0
+                greenTimerStart = tic;
+            end
+            greenTimerEnd = toc(greenTimerStart);
+            if passengerPickedUp && (greenTimerEnd > 1)
+                dropOffPassenger(brick);
+            end
+        case 4 % Yellow
+            if passengerDroppedOff
                 stop(brick);
-                pause(1);
-                moveForward(brick);
-            case 2 % Blue
-                if ~passengerPickedUp
-                    lastColor = color;
-                    pickUpPassenger(brick);
-                end
-            case 3 % Green
-                brick.playTone(100, 800, 1000);
-                pause(1);
-                brick.playTone(100, 800, 1000);
-                pause(1);
-            otherwise
-         
-        lastColor = color;
-        end
+                nonBlockingMoveForward(brick, 2);
+                running = false;
+            end
+        otherwise
+          
     end
 end
 
